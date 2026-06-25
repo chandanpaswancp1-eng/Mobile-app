@@ -46,6 +46,7 @@ export default function Dashboard() {
   const [authStep, setAuthStep] = useState('pin'); // 'contact', 'otp', 'details', 'pin'
   const [contactMethod, setContactMethod] = useState('');
   const [otpCode, setOtpCode] = useState('');
+  const [otpHash, setOtpHash] = useState(null);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [userAccount, setUserAccount] = useState(null);
 
@@ -218,24 +219,73 @@ export default function Dashboard() {
     }
   }, [isAuthenticated, biometricId, hasPromptedBio, isSettingPin, authStep]);
 
-  const handleSendOTP = (e) => {
+  const handleSendOTP = async (e) => {
     e.preventDefault();
     if (!contactMethod) return;
+    
     setIsSendingOtp(true);
-    setTimeout(() => {
+    
+    // If it's an email, use our real Resend API
+    if (contactMethod.includes('@')) {
+      try {
+        const response = await fetch('/api/auth/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: contactMethod })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          setOtpHash(data.hash);
+          setAuthStep('otp');
+        } else {
+          alert('Failed to send OTP: ' + data.error);
+        }
+      } catch (err) {
+        alert('Network error sending OTP');
+      }
       setIsSendingOtp(false);
-      setAuthStep('otp');
-    }, 1500);
+    } else {
+      // Fallback for phone numbers (mocked)
+      setTimeout(() => {
+        setIsSendingOtp(false);
+        setOtpHash('mocked_hash');
+        setAuthStep('otp');
+      }, 1500);
+    }
   };
 
-  const handleVerifyOTP = (e) => {
+  const handleVerifyOTP = async (e) => {
     e.preventDefault();
-    if (otpCode === '123456') {
-      localStorage.setItem('eco_expenses_account', contactMethod);
-      setUserAccount(contactMethod);
-      setAuthStep('details');
+    
+    if (contactMethod.includes('@') && otpHash !== 'mocked_hash') {
+      try {
+        const response = await fetch('/api/auth/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: contactMethod, otp: otpCode, hash: otpHash })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          localStorage.setItem('eco_expenses_account', contactMethod);
+          setUserAccount(contactMethod);
+          setAuthStep('details');
+        } else {
+          alert('Invalid OTP code. Please try again.');
+        }
+      } catch (err) {
+        alert('Error verifying OTP');
+      }
     } else {
-      alert('Invalid OTP code. Please enter 123456 for this demo.');
+      // Fallback mocked phone verification
+      if (otpCode === '123456') {
+        localStorage.setItem('eco_expenses_account', contactMethod);
+        setUserAccount(contactMethod);
+        setAuthStep('details');
+      } else {
+        alert('Invalid OTP code. Please enter 123456 for this demo.');
+      }
     }
   };
 
