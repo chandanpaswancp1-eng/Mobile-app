@@ -7,6 +7,7 @@ import AddTransactionModal from '@/components/AddTransactionModal';
 import SendMoneyModal from '@/components/SendMoneyModal';
 import TapToPayModal from '@/components/TapToPayModal';
 import LinkDeviceModal from '@/components/LinkDeviceModal';
+import AddCardModal from '@/components/AddCardModal';
 import { registerBiometrics, authenticateBiometrics } from '@/utils/webauthn';
 import { fetchExchangeRates, convertCurrency } from '@/utils/currencyExchange';
 
@@ -30,10 +31,12 @@ export default function Dashboard() {
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
   const [isTapToPayOpen, setIsTapToPayOpen] = useState(false);
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [isAddCardModalOpen, setIsAddCardModalOpen] = useState(false);
   const [linkModalMode, setLinkModalMode] = useState('host');
   
   const [isSyncing, setIsSyncing] = useState(false);
   
+  const [cards, setCards] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [userName, setUserName] = useState('User');
   const [currency, setCurrency] = useState('AED');
@@ -128,6 +131,13 @@ export default function Dashboard() {
     
     const savedBioId = localStorage.getItem('eco_expenses_biometric_id');
     if (savedBioId) setBiometricId(savedBioId);
+
+    const savedCards = localStorage.getItem('eco_expenses_cards');
+    if (savedCards) {
+      setCards(JSON.parse(savedCards));
+    } else {
+      setCards([{ id: 'default1', type: 'VISA', last4: '4281', expiry: '12/28', name: savedName || 'User' }]);
+    }
   }, []);
 
   // Save to localStorage
@@ -141,7 +151,10 @@ export default function Dashboard() {
       localStorage.setItem('eco_expenses_user_name', userName);
       localStorage.setItem('eco_expenses_currency', currency);
     }
-  }, [transactions, userName, currency, isClient]);
+    if (isClient && cards.length > 0) {
+      localStorage.setItem('eco_expenses_cards', JSON.stringify(cards));
+    }
+  }, [transactions, userName, currency, cards, isClient]);
 
   const handleAddTransaction = (newTx) => {
     setTransactions(prev => [newTx, ...prev]);
@@ -676,19 +689,21 @@ export default function Dashboard() {
         <p className="subtitle">Manage your connected bank cards</p>
       </header>
       
-      <div className="credit-card" style={{ marginBottom: '1.5rem', background: 'linear-gradient(135deg, #0f172a, #020617)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <Zap size={24} color="var(--text-muted)" />
-          <span style={{ color: '#fff', fontWeight: 600, letterSpacing: '2px' }}>VISA</span>
+      {cards.map(card => (
+        <div key={card.id} className="credit-card" style={{ marginBottom: '1.5rem', background: card.type === 'Mastercard' ? 'linear-gradient(135deg, #1e1b4b, #020617)' : 'linear-gradient(135deg, #0f172a, #020617)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Zap size={24} color={card.type === 'Mastercard' ? '#ffedd5' : 'var(--text-muted)'} />
+            <span style={{ color: '#fff', fontWeight: 600, letterSpacing: '2px' }}>{card.type}</span>
+          </div>
+          <div style={{ marginTop: '2rem', marginBottom: '1rem', fontSize: '1.5rem', color: '#fff', letterSpacing: '4px', fontFamily: 'monospace' }}>
+            **** **** **** {card.last4}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>
+            <span>{card.name || userName}</span>
+            <span>{card.expiry}</span>
+          </div>
         </div>
-        <div style={{ marginTop: '2rem', marginBottom: '1rem', fontSize: '1.5rem', color: '#fff', letterSpacing: '4px', fontFamily: 'monospace' }}>
-          **** **** **** 4281
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase' }}>
-          <span>{userName}</span>
-          <span>12/28</span>
-        </div>
-      </div>
+      ))}
 
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
         <button className="btn btn-primary" style={{ flex: 1, padding: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }} onClick={() => setIsTapToPayOpen(true)}>
@@ -699,7 +714,7 @@ export default function Dashboard() {
         </button>
       </div>
 
-      <button className="btn btn-outline" style={{ width: '100%', padding: '1.25rem', display: 'flex', gap: '0.75rem', justifyContent: 'center', borderStyle: 'dashed', borderWidth: '2px', borderColor: 'var(--surface-border)' }}>
+      <button className="btn btn-outline" style={{ width: '100%', padding: '1.25rem', display: 'flex', gap: '0.75rem', justifyContent: 'center', borderStyle: 'dashed', borderWidth: '2px', borderColor: 'var(--surface-border)' }} onClick={() => setIsAddCardModalOpen(true)}>
         <Plus size={20} color="var(--accent-neon)" /> Add New Card
       </button>
     </div>
@@ -1040,6 +1055,12 @@ export default function Dashboard() {
         familyMembers={familyMembers}
         transactions={transactions}
         onSyncSuccess={handleSyncSuccess}
+      />
+      
+      <AddCardModal
+        isOpen={isAddCardModalOpen}
+        onClose={() => setIsAddCardModalOpen(false)}
+        onAdd={(newCard) => setCards([...cards, newCard])}
       />
     </main>
   );
