@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Home, Plus, CreditCard, User, Wallet, RefreshCw, Zap, Download, Settings, LogOut, ChevronRight, PieChart, Send, Lock, Fingerprint, Link2, Users, Smartphone, Camera } from 'lucide-react';
+import { usePlaidLink } from 'react-plaid-link';
 import AddTransactionModal from '@/components/AddTransactionModal';
 import SendMoneyModal from '@/components/SendMoneyModal';
 import TapToPayModal from '@/components/TapToPayModal';
@@ -146,16 +147,76 @@ export default function Dashboard() {
     setTransactions(prev => [newTx, ...prev]);
   };
 
-  const handleSyncCard = () => {
-    setIsSyncing(true);
-    setTimeout(() => {
-      const mockNewCardTx = [
-        { id: Date.now(), type: 'card', merchant: 'Starbucks', amount: 25.00, category: 'Food & Dining', date: new Date().toLocaleDateString() },
-        { id: Date.now() + 1, type: 'card', merchant: 'Amazon AE', amount: 199.99, category: 'Shopping', date: new Date().toLocaleDateString() }
-      ];
-      setTransactions(prev => [...mockNewCardTx, ...prev]);
+  const [linkToken, setLinkToken] = useState(null);
+
+  useEffect(() => {
+    const fetchLinkToken = async () => {
+      try {
+        const response = await fetch('/api/plaid/create-link-token', { method: 'POST' });
+        const data = await response.json();
+        if (data.link_token) {
+          setLinkToken(data.link_token);
+        }
+      } catch (err) {
+        console.log("Plaid not configured yet", err);
+      }
+    };
+    if (isAuthenticated && isClient) {
+      fetchLinkToken();
+    }
+  }, [isAuthenticated, isClient]);
+
+  const { open, ready } = usePlaidLink({
+    token: linkToken,
+    onSuccess: async (public_token, metadata) => {
+      setIsSyncing(true);
+      try {
+        const res = await fetch('/api/plaid/exchange-public-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ public_token }),
+        });
+        const data = await res.json();
+        
+        if (data.access_token) {
+          // Fetch real transactions
+          const txRes = await fetch('/api/plaid/transactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ access_token: data.access_token }),
+          });
+          const txData = await txRes.json();
+          
+          if (txData.transactions && txData.transactions.length > 0) {
+            setTransactions(prev => [...txData.transactions, ...prev]);
+            alert(`Successfully synced ${txData.transactions.length} transactions from your bank!`);
+          } else {
+            alert("Bank linked successfully, but no recent transactions found.");
+          }
+        }
+      } catch (err) {
+        console.error("Error syncing bank:", err);
+        alert("Failed to sync bank. Check your API keys.");
+      }
       setIsSyncing(false);
-    }, 2000);
+    },
+  });
+
+  const handleSyncCard = () => {
+    if (ready && linkToken) {
+      open();
+    } else {
+      // Fallback for demo purposes if Plaid isn't configured
+      setIsSyncing(true);
+      setTimeout(() => {
+        const mockNewCardTx = [
+          { id: Date.now(), type: 'card', merchant: 'Plaid Mock (Unconfigured)', amount: 25.00, category: 'Food & Dining', date: new Date().toLocaleDateString() }
+        ];
+        setTransactions(prev => [...mockNewCardTx, ...prev]);
+        setIsSyncing(false);
+        alert("Plaid keys are missing, used mock sync instead. Add PLAID_CLIENT_ID to .env.local to use real sync.");
+      }, 1000);
+    }
   };
 
   const exportCSV = () => {
